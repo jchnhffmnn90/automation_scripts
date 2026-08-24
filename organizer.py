@@ -5,13 +5,13 @@ Sortiert Dateien in einem Verzeichnis nach Dateityp und Alter in Unterordner.
 """
 
 from __future__ import annotations
+
 import argparse
 import datetime
 import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 DEFAULT_CATEGORIES: dict[str, list[str]] = {
     "Dokumente": [
@@ -35,7 +35,7 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
 IGNORED_EXTENSIONS = {".crdownload", ".tmp", ".part", ".downloading"}
 
 
-def parse_arguments(args: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_arguments(args: list[str] | None = None) -> argparse.Namespace:
     """Parst Kommandozeilenargumente."""
     parser = argparse.ArgumentParser(
         description="Organisiert Dateien in einem Quellordner in thematische Unterordner."
@@ -57,7 +57,7 @@ def parse_arguments(args: Optional[list[str]] = None) -> argparse.Namespace:
         type=int,
         default=None,
         metavar="DAYS",
-        help="Nur  Dateien verschieben, die älter als X Tage sind",
+        help="Nur Dateien verschieben, die älter als X Tage sind",
     )
     parser.add_argument(
         "--dry-run", "-n", action="store_true", help="Simulation ausführen"
@@ -72,8 +72,8 @@ def parse_arguments(args: Optional[list[str]] = None) -> argparse.Namespace:
 
 
 def get_category_for_file(
-    file_path: Path, categories: Optional[dict[str, List[str]]] = None
-) -> Optional[str]:
+    file_path: Path, categories: dict[str, list[str]] | None = None
+) -> str | None:
     """
     Ermittelt die passende Kategorie für eine Datei.
     Unterstützt auch mehrteilige Dateiendungen wie '.tar.gz'.
@@ -91,7 +91,11 @@ def get_category_for_file(
     return "Sonstiges"
 
 
-def resolve_collision(target_dir: Path, filename: str) -> Path:
+def resolve_collision(
+    target_dir: Path,
+    filename: str,
+    categories: dict[str, list[str]] | None = None,
+) -> Path:
     """
     Erzeugt einen eindeutigen Zieldateinamen bei Namenskollisionen.
     Beispiel: datei.pdf -> datei_1.pdf, datei_2.pdf
@@ -99,12 +103,24 @@ def resolve_collision(target_dir: Path, filename: str) -> Path:
     candidate = target_dir / filename
     if not candidate.exists():
         return candidate
+
     path_obj = Path(filename)
     stem = path_obj.stem
     suffix = path_obj.suffix
-    if filename.lower().endswith(".tar.gz"):
-        stem = filename[:-7]
-        suffix = ".tar.gz"
+
+    cat_map = categories if categories is not None else DEFAULT_CATEGORIES
+    compound_extensions = [
+        ext.lower()
+        for exts in cat_map.values()
+        for ext in exts
+        if ext.count(".") > 1
+    ]
+
+    for comp_ext in sorted(compound_extensions, key=len, reverse=True):
+        if filename.lower().endswith(comp_ext):
+            stem = filename[: -len(comp_ext)]
+            suffix = filename[-len(comp_ext) :]
+            break
 
     counter = 1
     while candidate.exists():
@@ -114,7 +130,7 @@ def resolve_collision(target_dir: Path, filename: str) -> Path:
 
 
 def is_older_than(
-    file_path: Path, days: int, reference_time: Optional[datetime.datetime] = None
+    file_path: Path, days: int, reference_time: datetime.datetime | None = None
 ) -> bool:
     """Prüft, ob die Datei älter als angegebene Anzahl an Tagen ist."""
     try:
@@ -129,11 +145,11 @@ def is_older_than(
 
 def organize_directory(
     source_dir: Path,
-    target_dir: Optional[Path] = None,
-    older_than_days: Optional[int] = None,
+    target_dir: Path | None = None,
+    older_than_days: int | None = None,
     dry_run: bool = False,
-    categories: Optional[Dict[str, List[str]]] = None,
-) -> Dict[str, int]:
+    categories: dict[str, list[str]] | None = None,
+) -> dict[str, int]:
     """
     Organisiert alle Dateien in source_dir in die Zielkategorien.
     Gibt eine Statistik über verschobene, übersprungene und ignorierten Dateien zurück.
@@ -158,13 +174,13 @@ def organize_directory(
             stats["ignored"] += 1
             continue
         category_dir = dst / category
-        destination = resolve_collision(category_dir, item.name)
+        destination = resolve_collision(category_dir, item.name, categories=categories)
         action_prefix = "[DRY-RUN] Würde verschieben" if dry_run else "Verschiebe"
         logging.info(f"{action_prefix}: {item.name} -> {category}/{destination.name}")
         if not dry_run:
             category_dir.mkdir(parents=True, exist_ok=True)
             try:
-                shutil.move(str(item), str(destination))
+                shutil.move(item, destination)
                 stats["moved"] += 1
             except OSError as e:
                 logging.error(f"Fehler beim Verschieben von: {item.name}: {e}")
@@ -175,7 +191,7 @@ def organize_directory(
     return stats
 
 
-def main(args: Optional[list[str]] = None) -> int:
+def main(args: list[str] | None = None) -> int:
     parsed_args = parse_arguments(args)
     log_level = logging.DEBUG if parsed_args.verbose else logging.INFO
     logging.basicConfig(

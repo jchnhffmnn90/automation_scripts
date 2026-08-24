@@ -70,6 +70,19 @@ class TestCollisionResolution(unittest.TestCase):
         res = resolve_collision(self.path, "archiv.tar.gz")
         self.assertEqual(res, self.path / "archiv_1.tar.gz")
 
+    def test_custom_compound_extension_collision(self):
+        custom_categories = {"CustomArchive": [".tar.bz2"]}
+        (self.path / "backup.tar.bz2").touch()
+        res = resolve_collision(
+            self.path, "backup.tar.bz2", categories=custom_categories
+        )
+        self.assertEqual(res, self.path / "backup_1.tar.bz2")
+
+    def test_dotted_filename_collision(self):
+        (self.path / "report.2024.pdf").touch()
+        res = resolve_collision(self.path, "report.2024.pdf")
+        self.assertEqual(res, self.path / "report.2024_1.pdf")
+
 
 class TestDateAgeFilter(unittest.TestCase):
     """Unit-Tests für die Altersprüfung."""

@@ -13,6 +13,7 @@ from organizer import (
     DEFAULT_CATEGORIES,
     get_category_for_file,
     is_older_than,
+    logger,
     organize_directory,
     resolve_collision,
 )
@@ -131,6 +132,9 @@ class TestOrganizeIntegration(unittest.TestCase):
         # Quelldateien müssen unverändert vorhanden sein
         self.assertTrue((self.src / "rechnung.pdf").exists())
         self.assertFalse((self.src / "Dokumente").exists())
+
+    def test_custom_logger_instance(self):
+        self.assertEqual(logger.name, "organizer")
 
     def test_full_organization(self):
         stats = organize_directory(self.src, dry_run=False)

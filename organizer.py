@@ -13,6 +13,8 @@ import shutil
 import sys
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_CATEGORIES: dict[str, list[str]] = {
     "Dokumente": [
         ".pdf",
@@ -110,10 +112,7 @@ def resolve_collision(
 
     cat_map = categories if categories is not None else DEFAULT_CATEGORIES
     compound_extensions = [
-        ext.lower()
-        for exts in cat_map.values()
-        for ext in exts
-        if ext.count(".") > 1
+        ext.lower() for exts in cat_map.values() for ext in exts if ext.count(".") > 1
     ]
 
     for comp_ext in sorted(compound_extensions, key=len, reverse=True):
@@ -158,32 +157,32 @@ def organize_directory(
     dst = Path(target_dir).resolve() if target_dir else src
     stats = {"moved": 0, "skipped": 0, "ignored": 0}
     if not src.exists() or not src.is_dir():
-        logging.error(f"Quellverzeichnis existiert nicht: {src}")
+        logger.error(f"Quellverzeichnis existiert nicht: {src}")
         return stats
 
     for item in sorted(src.iterdir()):
         if not item.is_file():
             continue
         if older_than_days is not None and not is_older_than(item, older_than_days):
-            logging.debug(f"Übersprungen (zu neu): {item.name}")
+            logger.debug(f"Übersprungen (zu neu): {item.name}")
             stats["skipped"] += 1
             continue
         category = get_category_for_file(item, categories)
         if category is None:
-            logging.debug(f"Ignoriert (temporäre Datei): {item.name}")
+            logger.debug(f"Ignoriert (temporäre Datei): {item.name}")
             stats["ignored"] += 1
             continue
         category_dir = dst / category
         destination = resolve_collision(category_dir, item.name, categories=categories)
         action_prefix = "[DRY-RUN] Würde verschieben" if dry_run else "Verschiebe"
-        logging.info(f"{action_prefix}: {item.name} -> {category}/{destination.name}")
+        logger.info(f"{action_prefix}: {item.name} -> {category}/{destination.name}")
         if not dry_run:
             category_dir.mkdir(parents=True, exist_ok=True)
             try:
                 shutil.move(item, destination)
                 stats["moved"] += 1
             except OSError as e:
-                logging.error(f"Fehler beim Verschieben von: {item.name}: {e}")
+                logger.error(f"Fehler beim Verschieben von: {item.name}: {e}")
                 stats["skipped"] += 1
         else:
             stats["moved"] += 1
@@ -201,7 +200,7 @@ def main(args: list[str] | None = None) -> int:
     )
     source_path = Path(parsed_args.source)
     target_path = Path(parsed_args.target) if parsed_args.target else None
-    logging.info(f"Starte Organisation von: {source_path.resolve()}")
+    logger.info(f"Starte Organisation von: {source_path.resolve()}")
 
     stats = organize_directory(
         source_dir=source_path,
@@ -210,7 +209,7 @@ def main(args: list[str] | None = None) -> int:
         dry_run=parsed_args.dry_run,
     )
 
-    logging.info(
+    logger.info(
         f"Fertig! Verschoben: {stats['moved']}, Übersprungen: {stats['skipped']}, Ignoriert: {stats['ignored']}"
     )
     return 0

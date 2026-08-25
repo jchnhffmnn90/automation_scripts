@@ -36,19 +36,23 @@ A fast and configurable CLI utility to organize cluttered directories (such as `
 
 #### CLI Usage
 
+After installing the package (`pip install -e .`), you can use the standalone `organize` command directly from anywhere in your terminal:
+
 ```bash
 # Organize current working directory in-place
-python3 organizer.py
+organize
 
 # Organize a specific source folder into a separate target directory
-python3 organizer.py /path/to/source --target /path/to/organized
+organize /path/to/source --target /path/to/organized
 
 # Dry-run simulation (no files will be moved)
-python3 organizer.py /path/to/downloads --dry-run --verbose
+organize /path/to/downloads --dry-run --verbose
 
 # Move only files older than 30 days
-python3 organizer.py /path/to/downloads --older-than 30
+organize /path/to/downloads --older-than 30
 ```
+
+*(Alternatively, run directly as a script: `python3 organizer.py`)*
 
 #### Command-Line Arguments
 

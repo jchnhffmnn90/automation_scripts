@@ -38,7 +38,8 @@ IGNORED_EXTENSIONS = {".crdownload", ".tmp", ".part", ".downloading"}
 def parse_arguments(args: Optional[list[str]] = None) -> argparse.Namespace:
     """Parst Kommandozeilenargumente."""
     parser = argparse.ArgumentParser(
-        description="Organisiert Dateien in einem Quellordner in thematische Unterordner."
+        prog="organize",
+        description="Organisiert Dateien in einem Quellordner in thematische Unterordner.",
     )
     parser.add_argument(
         "source",

@@ -55,49 +55,30 @@ organize /path/to/downloads --older-than 30
 
 ---
 
-### 2. Backup Utility (`backup.py`)
+### 2. Simple Backup Script (`backup.py`)
 
-A reliable backup utility that copies all files from a source directory to a target directory with detailed operation logging, timestamp tracking, and resilient error handling.
+A clean, straightforward backup script that copies all files from a defined source folder to a destination backup folder with automatic folder creation and detailed operation & error logging.
 
 #### Key Features
-- **Automatic Directory Creation:** Automatically creates the target directory (and any necessary parent directories) if it does not already exist.
-- **Detailed Operation Logging:** Records each file copy process with timestamp, source filename, and target destination in `log.txt`.
-- **Resilient Error Handling:** Catches read/write and permission errors using `try-except` blocks, logs the failure details, and continues backing up remaining files.
-- **Dry-Run Simulation:** Preview backup operations without copying any files (`--dry-run`).
-- **Configurable Log Destination:** Choose a custom log file location (`--log-file`).
+- **Automatic Directory Creation:** Creates the target backup directory automatically if it does not exist.
+- **Timestamped Operation Logging:** Records each copied file (timestamp and filename) in `log.txt`.
+- **Try-Except Error Handling:** Catches read and file system errors gracefully without interrupting the entire process.
+- **Configurable Paths:** Custom source, target, and log paths can be configured directly or passed to `backup_files()`.
 
-#### CLI Usage
+#### Usage
 
 ```bash
-# Run backup from source folder to target directory
-backup /path/to/source /path/to/backup
-
-# Run backup with custom log file location
-backup /path/to/source /path/to/backup --log-file /var/log/backup.txt
-
-# Simulate backup in dry-run mode
-backup /path/to/source /path/to/backup --dry-run --verbose
+# Run backup with default directories (./source -> ./backup)
+python3 backup.py
 ```
 
-#### Command-Line Arguments
+Or call programmatically in Python:
 
-| Argument | Description | Default |
-| :--- | :--- | :--- |
-| `source` | Source directory path to back up | *(Required)* |
-| `target` | Destination backup directory path | *(Required)* |
-| `-l`, `--log-file` | Path to log file for operation records | `log.txt` |
-| `-n`, `--dry-run` | Simulate operations without copying files | `False` |
-| `-v`, `--verbose` | Enable debug logging output | `False` |
+```python
+from backup import backup_files
 
-#### Command-Line Arguments
-
-| Argument | Description | Default |
-| :--- | :--- | :--- |
-| `source` | Source directory path | `.` (current directory) |
-| `-t`, `--target` | Destination directory path | Same as `source` |
-| `--older-than DAYS` | Only move files older than specified days | `None` (all files) |
-| `-n`, `--dry-run` | Perform a trial run with no filesystem changes | `False` |
-| `-v`, `--verbose` | Enable debug logging output | `False` |
+backup_files(source="./my_documents", target="./my_backup", log_path="./log.txt")
+```
 
 ---
 

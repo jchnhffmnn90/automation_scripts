@@ -33,4 +33,3 @@ keywords = ["automation", "cli", "file-management", "backup", "scripts", "produc
 [project.scripts]
 organize = "organizer:main"
 organizer = "organizer:main"
-backup = "backup:main"

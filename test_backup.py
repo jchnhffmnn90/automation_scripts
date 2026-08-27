@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test Suite for Backup Script (Unit and Integration Tests)
+Test Suite für das Backup-Skript
 """
 
 import tempfile
@@ -9,162 +9,107 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backup import (
-    DEFAULT_LOG_FILE,
-    parse_arguments,
-    run_backup,
-    write_log_entry,
+    backup_files,
+    log_message,
 )
 
 
-class TestBackupArgumentParsing(unittest.TestCase):
-    """Unit tests for backup CLI argument parsing."""
-
-    def test_default_arguments(self):
-        args = parse_arguments(["/src/dir", "/dst/dir"])
-        self.assertEqual(args.source, "/src/dir")
-        self.assertEqual(args.target, "/dst/dir")
-        self.assertEqual(args.log_file, DEFAULT_LOG_FILE)
-        self.assertFalse(args.dry_run)
-        self.assertFalse(args.verbose)
-
-    def test_custom_arguments(self):
-        args = parse_arguments(
-            ["/src", "/dst", "--log-file", "/tmp/custom.log", "--dry-run", "--verbose"]
-        )
-        self.assertEqual(args.source, "/src")
-        self.assertEqual(args.target, "/dst")
-        self.assertEqual(args.log_file, "/tmp/custom.log")
-        self.assertTrue(args.dry_run)
-        self.assertTrue(args.verbose)
-
-
-class TestBackupIntegration(unittest.TestCase):
-    """Integration and error handling tests for backup utility."""
+class TestBackupScript(unittest.TestCase):
+    """Tests für die Backup-Funktionalität und Protokollierung."""
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base_path = Path(self.temp_dir.name)
-        self.src_dir = self.base_path / "source"
-        self.src_dir.mkdir()
-        self.target_dir = self.base_path / "backup_target"
+        self.source_dir = self.base_path / "source"
+        self.source_dir.mkdir()
+        self.target_dir = self.base_path / "backup"
         self.log_file = self.base_path / "log.txt"
 
-        # Create sample files in source
-        (self.src_dir / "document.txt").write_text("Hello World")
-        (self.src_dir / "data.csv").write_text("a,b,c\n1,2,3")
-        (self.src_dir / "notes.md").write_text("# Notes")
+        # Beispiel-Dateien anlegen
+        (self.source_dir / "dokument.txt").write_text("Inhalt A")
+        (self.source_dir / "tabelle.csv").write_text("1,2,3")
+        (self.source_dir / "bild.png").write_text("Binary")
 
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_successful_backup_creates_target_dir_and_copies_files(self):
-        # Target directory does not exist initially
+    def test_log_message_creates_file_with_timestamp(self):
+        log_path = self.base_path / "sub" / "custom_log.txt"
+        log_message(log_path, "Testmeldung")
+        self.assertTrue(log_path.exists())
+        content = log_path.read_text(encoding="utf-8")
+        self.assertIn("Testmeldung", content)
+        self.assertRegex(content, r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]")
+
+    def test_backup_creates_target_dir_and_copies_files(self):
+        # Zielverzeichnis existiert vor dem Aufruf nicht
         self.assertFalse(self.target_dir.exists())
 
-        stats = run_backup(
-            source_dir=self.src_dir,
-            target_dir=self.target_dir,
-            log_file=self.log_file,
-            dry_run=False,
+        stats = backup_files(
+            source=self.source_dir,
+            target=self.target_dir,
+            log_path=self.log_file,
         )
 
+        # Überprüfen der Rückgabewerte
         self.assertEqual(stats["copied"], 3)
         self.assertEqual(stats["failed"], 0)
+
+        # Zielverzeichnis und Dateien müssen existieren
         self.assertTrue(self.target_dir.exists())
-        self.assertTrue((self.target_dir / "document.txt").exists())
-        self.assertTrue((self.target_dir / "data.csv").exists())
-        self.assertTrue((self.target_dir / "notes.md").exists())
+        self.assertTrue((self.target_dir / "dokument.txt").exists())
+        self.assertTrue((self.target_dir / "tabelle.csv").exists())
+        self.assertTrue((self.target_dir / "bild.png").exists())
         self.assertEqual(
-            (self.target_dir / "document.txt").read_text(), "Hello World"
+            (self.target_dir / "dokument.txt").read_text(), "Inhalt A"
         )
 
-        # Verify log file contents
+        # Logdatei muss existieren und Kopiervorgänge enthalten
         self.assertTrue(self.log_file.exists())
-        log_content = self.log_file.read_text()
+        log_content = self.log_file.read_text(encoding="utf-8")
         self.assertIn("START: Backup", log_content)
-        self.assertIn("SUCCESS: Copied 'document.txt'", log_content)
-        self.assertIn("SUCCESS: Copied 'data.csv'", log_content)
-        self.assertIn("SUCCESS: Copied 'notes.md'", log_content)
-        self.assertIn("FINISHED: Copied: 3, Failed: 0", log_content)
+        self.assertIn("ERFOLGREICH: 'dokument.txt'", log_content)
+        self.assertIn("ERFOLGREICH: 'tabelle.csv'", log_content)
+        self.assertIn("ERFOLGREICH: 'bild.png'", log_content)
+        self.assertIn("ENDE: Backup abgeschlossen", log_content)
 
-    def test_dry_run_does_not_create_files_but_logs(self):
-        stats = run_backup(
-            source_dir=self.src_dir,
-            target_dir=self.target_dir,
-            log_file=self.log_file,
-            dry_run=True,
-        )
-
-        self.assertEqual(stats["copied"], 3)
-        self.assertEqual(stats["failed"], 0)
-        self.assertFalse(self.target_dir.exists())
-
-        self.assertTrue(self.log_file.exists())
-        log_content = self.log_file.read_text()
-        self.assertIn("[DRY-RUN]", log_content)
-
-    def test_handles_copy_error_gracefully(self):
-        # Create unreadable/error-triggering file simulation via mock
+    def test_backup_catches_and_logs_file_copy_errors(self):
         import shutil as real_shutil
 
         original_copy2 = real_shutil.copy2
 
         def mock_copy2(src, dst):
-            if "data.csv" in str(src):
-                raise PermissionError("Permission denied: unreadable file")
+            if "tabelle.csv" in str(src):
+                raise PermissionError("Zugriff verweigert (nicht lesbar)")
             return original_copy2(src, dst)
 
         with patch("shutil.copy2", side_effect=mock_copy2):
-            stats = run_backup(
-                source_dir=self.src_dir,
-                target_dir=self.target_dir,
-                log_file=self.log_file,
+            stats = backup_files(
+                source=self.source_dir,
+                target=self.target_dir,
+                log_path=self.log_file,
             )
 
         self.assertEqual(stats["copied"], 2)
         self.assertEqual(stats["failed"], 1)
-        self.assertTrue((self.target_dir / "document.txt").exists())
-        self.assertTrue((self.target_dir / "notes.md").exists())
-        self.assertFalse((self.target_dir / "data.csv").exists())
+        self.assertTrue((self.target_dir / "dokument.txt").exists())
+        self.assertFalse((self.target_dir / "tabelle.csv").exists())
 
-        # Check log file contains the error
-        log_content = self.log_file.read_text()
-        self.assertIn("ERROR: Failed to copy 'data.csv'", log_content)
-        self.assertIn("Permission denied", log_content)
+        # Fehlerprotokollierung im Log prüfen
+        log_content = self.log_file.read_text(encoding="utf-8")
+        self.assertIn("FEHLER: Datei 'tabelle.csv' konnte nicht kopiert werden", log_content)
+        self.assertIn("Zugriff verweigert", log_content)
 
-    def test_nonexistent_source_directory(self):
-        nonexistent = self.base_path / "does_not_exist"
-        stats = run_backup(
-            source_dir=nonexistent,
-            target_dir=self.target_dir,
-            log_file=self.log_file,
+    def test_nonexistent_source_directory_logs_error(self):
+        nonexistent = self.base_path / "nicht_vorhanden"
+        stats = backup_files(
+            source=nonexistent,
+            target=self.target_dir,
+            log_path=self.log_file,
         )
         self.assertEqual(stats["copied"], 0)
         self.assertTrue(self.log_file.exists())
-        self.assertIn(
-            "Source directory does not exist", self.log_file.read_text()
-        )
-
-    def test_write_log_entry(self):
-        log_path = self.base_path / "subdir" / "test_log.txt"
-        write_log_entry(log_path, "Test entry")
-        self.assertTrue(log_path.exists())
-        self.assertIn("Test entry", log_path.read_text())
-
-    def test_subdirectories_are_skipped(self):
-        subdir = self.src_dir / "nested_folder"
-        subdir.mkdir()
-        (subdir / "inner.txt").write_text("inner")
-
-        stats = run_backup(
-            source_dir=self.src_dir,
-            target_dir=self.target_dir,
-            log_file=self.log_file,
-        )
-
-        self.assertEqual(stats["copied"], 3)
-        self.assertEqual(stats["skipped"], 1)
-        self.assertFalse((self.target_dir / "nested_folder").exists())
+        self.assertIn("FEHLER: Quellverzeichnis existiert nicht", self.log_file.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

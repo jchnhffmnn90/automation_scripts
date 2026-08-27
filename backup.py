@@ -1,166 +1,95 @@
 #!/usr/bin/env python3
 """
-Simple Backup Utility CLI Script
-Copies files from a source directory to a destination backup directory and logs operations.
+Einfache Backup-Anwendung
+Kopiert alle Dateien aus einem Quellverzeichnis in ein Zielverzeichnis
+und protokolliert alle Vorgänge sowie eventuelle Fehler in 'log.txt'.
 """
 
 from __future__ import annotations
 
-import argparse
 import datetime
-import logging
 import shutil
-import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
-DEFAULT_LOG_FILE = "log.txt"
-
-
-def parse_arguments(args: list[str] | None = None) -> argparse.Namespace:
-    """Parse command line arguments for the backup script."""
-    parser = argparse.ArgumentParser(
-        prog="backup",
-        description="Copies files from a source directory to a destination backup directory.",
-    )
-    parser.add_argument(
-        "source",
-        help="Path to the source directory to back up",
-    )
-    parser.add_argument(
-        "target",
-        help="Path to the destination backup directory",
-    )
-    parser.add_argument(
-        "--log-file",
-        "-l",
-        default=DEFAULT_LOG_FILE,
-        help="Path to the log file (default: log.txt)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        "-n",
-        action="store_true",
-        help="Simulate the backup without actually copying files",
-    )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Enable verbose output to stdout",
-    )
-    return parser.parse_args(args)
+# Standard-Konfiguration
+SOURCE_DIRECTORY = Path("./source")
+TARGET_DIRECTORY = Path("./backup")
+LOG_FILE = Path("log.txt")
 
 
-def write_log_entry(log_file_path: Path, message: str) -> None:
-    """
-    Appends a timestamped log entry to the specified log file.
-    Creates parent directories for the log file if necessary.
-    """
+def log_message(log_file: Path, message: str) -> None:
+    """Schreibt einen Eintrag mit aktuellem Zeitstempel in die Log-Datei."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_line = f"[{timestamp}] {message}\n"
-    log_file_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_file_path.open("a", encoding="utf-8") as f:
-        f.write(log_line)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] {message}\n")
 
 
-def run_backup(
-    source_dir: Path | str,
-    target_dir: Path | str,
-    log_file: Path | str = DEFAULT_LOG_FILE,
-    dry_run: bool = False,
+def backup_files(
+    source: Path | str = SOURCE_DIRECTORY,
+    target: Path | str = TARGET_DIRECTORY,
+    log_path: Path | str = LOG_FILE,
 ) -> dict[str, int]:
     """
-    Copies all files from source_dir to target_dir and logs each operation into log_file.
-    Catches errors with try-except blocks and logs them accordingly.
-
-    Returns:
-        dict[str, int]: Statistics on copied, failed, and skipped items.
+    Kopiert alle Dateien aus dem Quellverzeichnis in das Zielverzeichnis.
+    Erstellt das Zielverzeichnis automatisch, falls es nicht existiert.
+    Protokolliert jeden Kopiervorgang und eventuelle Fehler in der Log-Datei.
     """
-    src = Path(source_dir).resolve()
-    dst = Path(target_dir).resolve()
-    log_path = Path(log_file).resolve()
+    src_dir = Path(source).resolve()
+    target_dir = Path(target).resolve()
+    log_file = Path(log_path).resolve()
 
     stats = {"copied": 0, "failed": 0, "skipped": 0}
 
-    if not src.exists() or not src.is_dir():
-        error_msg = f"ERROR: Source directory does not exist or is not a directory: {src}"
-        logger.error(error_msg)
-        write_log_entry(log_path, error_msg)
+    # Sicherstellen, dass das Quellverzeichnis existiert
+    if not src_dir.exists() or not src_dir.is_dir():
+        log_message(
+            log_file,
+            f"FEHLER: Quellverzeichnis existiert nicht oder ist kein Ordner: {src_dir}",
+        )
         return stats
 
-    # Ensure destination directory exists or create it automatically
+    # Zielverzeichnis automatisch erstellen, falls es noch nicht existiert
     try:
-        if not dry_run:
-            dst.mkdir(parents=True, exist_ok=True)
+        target_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        error_msg = f"ERROR: Could not create target directory {dst}: {e}"
-        logger.error(error_msg)
-        write_log_entry(log_path, error_msg)
+        log_message(
+            log_file,
+            f"FEHLER: Zielverzeichnis konnte nicht erstellt werden ({target_dir}): {e}",
+        )
         stats["failed"] += 1
         return stats
 
-    write_log_entry(
-        log_path,
-        f"START: Backup from '{src}' to '{dst}'{' [DRY-RUN]' if dry_run else ''}",
-    )
+    log_message(log_file, f"START: Backup von '{src_dir}' nach '{target_dir}'")
 
-    for item in sorted(src.iterdir()):
+    # Alle Dateien im Quellordner durchgehen
+    for item in sorted(src_dir.iterdir()):
         if not item.is_file():
             stats["skipped"] += 1
             continue
 
-        target_file = dst / item.name
-        action_desc = f"Copying '{item.name}' -> '{target_file}'"
+        destination = target_dir / item.name
 
-        if dry_run:
-            logger.info(f"[DRY-RUN] {action_desc}")
-            write_log_entry(log_path, f"[DRY-RUN] SUCCESS: {action_desc}")
-            stats["copied"] += 1
-            continue
-
+        # Kopiervorgang mit try-except absichern
         try:
-            # Copy file with metadata preserved
-            shutil.copy2(item, target_file)
-            success_msg = f"SUCCESS: Copied '{item.name}' to '{target_file}'"
-            logger.info(success_msg)
-            write_log_entry(log_path, success_msg)
+            shutil.copy2(item, destination)
+            log_message(log_file, f"ERFOLGREICH: '{item.name}' nach '{destination}' kopiert.")
+            print(f"Kopiert: {item.name}")
             stats["copied"] += 1
-        except (OSError, PermissionError, shutil.Error) as e:
-            error_msg = f"ERROR: Failed to copy '{item.name}': {e}"
-            logger.error(error_msg)
-            write_log_entry(log_path, error_msg)
+        except Exception as error:
+            log_message(
+                log_file,
+                f"FEHLER: Datei '{item.name}' konnte nicht kopiert werden: {error}",
+            )
+            print(f"Fehler bei: {item.name} ({error})")
             stats["failed"] += 1
 
-    summary_msg = (
-        f"FINISHED: Copied: {stats['copied']}, Failed: {stats['failed']}, "
-        f"Skipped: {stats['skipped']}"
+    log_message(
+        log_file,
+        f"ENDE: Backup abgeschlossen (Kopiert: {stats['copied']}, Fehler: {stats['failed']}, Übersprungen: {stats['skipped']})",
     )
-    logger.info(summary_msg)
-    write_log_entry(log_path, summary_msg)
     return stats
 
 
-def main(args: list[str] | None = None) -> int:
-    """Main CLI entrypoint."""
-    parsed_args = parse_arguments(args)
-    log_level = logging.DEBUG if parsed_args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    logger.info(f"Starting backup from '{parsed_args.source}' to '{parsed_args.target}'")
-    stats = run_backup(
-        source_dir=parsed_args.source,
-        target_dir=parsed_args.target,
-        log_file=parsed_args.log_file,
-        dry_run=parsed_args.dry_run,
-    )
-    return 1 if stats["failed"] > 0 else 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    backup_files()
